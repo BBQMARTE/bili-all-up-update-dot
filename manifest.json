@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "B站全UP更新蓝点",
+  "version": "1.4.2",
+  "description": "B站动态页顶部头像条：所有已关注的UP主只要有更新都会出现小蓝点，而不只是常看的几个。",
+  "minimum_chrome_version": "111",
+  "permissions": ["storage"],
+  "host_permissions": ["https://*.bilibili.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "B站全UP更新蓝点",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/assets/icons/icon-16.png",
+      "32": "src/assets/icons/icon-32.png",
+      "48": "src/assets/icons/icon-48.png",
+      "128": "src/assets/icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "src/assets/icons/icon-16.png",
+    "32": "src/assets/icons/icon-32.png",
+    "48": "src/assets/icons/icon-48.png",
+    "128": "src/assets/icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://t.bilibili.com/*", "https://space.bilibili.com/*"],
+      "js": [
+        "src/injected/bridge.js",
+        "src/injected/wbi.js",
+        "src/injected/api.js",
+        "src/injected/scanner.js",
+        "src/injected/patch-portal.js",
+        "src/injected/read-tracker.js",
+        "src/injected/index.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://t.bilibili.com/*", "https://space.bilibili.com/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ]
+}

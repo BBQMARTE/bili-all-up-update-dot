@@ -1,0 +1,490 @@
+/* 全UP更新蓝点 · 设置面板
+   注意：扩展 popup 受 CSP 限制，禁止加载任何远程资源（含 CDN），
+   因此样式全部内联于本地 CSS，不引入 Tailwind CDN。 */
+
+:root {
+  --brand: #00aeec;
+  --brand-dark: #009ad3;
+  --accent: #fb7299;
+  --bg: #ffffff;
+  --bg-sub: #f6f7f8;
+  --line: #e3e5e7;
+  --text-1: #18191c;
+  --text-2: #61666d;
+  --text-3: #c9ccd0;
+  --radius: 12px;
+  --ease: cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 320px;
+  background: var(--bg-sub);
+  color: var(--text-1);
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  padding: 10px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.app::-webkit-scrollbar {
+  width: 4px;
+}
+.app::-webkit-scrollbar-thumb {
+  background: var(--text-3);
+  border-radius: 2px;
+}
+
+/* ---------- 顶部标题栏 ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 10px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 3px rgba(0, 174, 236, 0.16);
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.status-pill {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.status-pill.is-off {
+  background: var(--bg-sub);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+  margin-bottom: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.row-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+.row-sub {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 3px;
+}
+
+/* ---------- 开关 ---------- */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 220ms ease;
+}
+
+.switch.is-on {
+  background: var(--brand);
+}
+
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 220ms var(--ease);
+}
+
+.switch.is-on .knob {
+  transform: translateX(18px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ---------- 未读概览 ---------- */
+.unread-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.unread-left {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.unread-num {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.unread-label {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: 6px;
+  transition: opacity 200ms ease, color 200ms ease;
+}
+
+.link-btn:hover {
+  color: var(--brand-dark);
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+/* ---------- 类型过滤 ---------- */
+.type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.type-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: 8px;
+  transition: background-color 200ms ease;
+  position: relative;
+}
+
+.type-row:hover {
+  background: var(--bg-sub);
+}
+
+.type-row-wide {
+  grid-column: 1 / -1;
+}
+
+.type-name {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+/* 真实 checkbox 隐藏，用 .cb-box 绘制 */
+.cb {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.cb-box {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--text-3);
+  background: #fff;
+  position: relative;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.cb-box::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0.4);
+  opacity: 0;
+  transition: transform 180ms var(--ease), opacity 180ms ease;
+}
+
+.cb:checked + .cb-box {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.cb:checked + .cb-box::after {
+  transform: rotate(45deg) scale(1);
+  opacity: 1;
+}
+
+.cb:focus-visible + .cb-box {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 类型小图标（纯 CSS 绘制，不使用外部图片） */
+.type-ico {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  position: relative;
+}
+
+.ico-av,
+.ico-draw,
+.ico-word,
+.ico-forward,
+.ico-live {
+  border-radius: 3px;
+  background: var(--bg-sub);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.ico-av::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  border-left: 6px solid var(--text-2);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+
+.ico-draw::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--text-2) 45%, transparent 46%),
+    linear-gradient(-45deg, var(--accent) 55%, transparent 56%);
+  opacity: 0.8;
+}
+
+.ico-word::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 4px;
+  height: 1.5px;
+  background: var(--text-2);
+  box-shadow: 0 3px 0 var(--text-3), 0 6px 0 var(--text-3);
+}
+
+.ico-forward::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 5px;
+  width: 8px;
+  height: 5px;
+  border: 1.5px solid var(--text-2);
+  border-right-width: 4px;
+  border-radius: 2px;
+}
+
+.ico-live::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ---------- 分段控件 ---------- */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-sub);
+  border-radius: 9px;
+}
+
+.seg-item {
+  flex: 1 1 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  padding: 6px 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+.seg-item:hover {
+  color: var(--text-1);
+}
+
+.seg-item.is-active {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 174, 236, 0.32);
+}
+
+.seg-item:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+/* ---------- 底部按钮 ---------- */
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.btn {
+  flex: 1 1 0;
+  height: 34px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 200ms ease, transform 120ms ease, box-shadow 200ms ease,
+    border-color 200ms ease, opacity 200ms ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--brand-dark);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  background: #fff;
+  color: var(--text-1);
+  border-color: var(--line);
+}
+
+.btn-ghost:hover {
+  border-color: var(--text-3);
+  background: var(--bg-sub);
+}
+
+.btn-ghost:active {
+  transform: scale(0.98);
+}
+
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---------- 提示 ---------- */
+.hint {
+  margin: 8px 2px 2px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-2);
+  text-align: center;
+  transition: color 200ms ease;
+}
+
+.hint.is-warn {
+  color: var(--accent);
+}
+
+/* ---------- 停用态 ---------- */
+.app.is-disabled .card:not(:first-of-type),
+.app.is-disabled .unread-card,
+.app.is-disabled .actions {
+  opacity: 0.4;
+  pointer-events: none;
+}

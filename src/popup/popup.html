@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>全UP更新蓝点</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- 顶部标题栏 -->
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span class="brand-name">全UP更新蓝点</span>
+        </div>
+        <span class="status-pill" id="statusPill">已启用</span>
+      </header>
+
+      <!-- 总开关 -->
+      <section class="card">
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">启用插件</div>
+            <div class="row-sub">关闭后恢复 B 站官方行为</div>
+          </div>
+          <button
+            class="switch is-on"
+            id="switchEnabled"
+            role="switch"
+            aria-checked="true"
+            aria-label="启用插件"
+          >
+            <span class="knob"></span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 未读概览 -->
+      <section class="card unread-card">
+        <div class="unread-left">
+          <div class="unread-num" id="unreadNum">0</div>
+          <div class="unread-label">位 UP 主有更新</div>
+        </div>
+        <button class="link-btn" id="btnReadAllTop">全部已读</button>
+      </section>
+
+      <!-- 动态类型过滤 -->
+      <section class="card">
+        <div class="card-title">计入更新的类型</div>
+        <div class="type-grid">
+          <label class="type-row">
+            <span class="type-ico ico-av" aria-hidden="true"></span>
+            <span class="type-name">视频投稿</span>
+            <input type="checkbox" class="cb" data-type="av" checked />
+            <span class="cb-box" aria-hidden="true"></span>
+          </label>
+          <label class="type-row">
+            <span class="type-ico ico-draw" aria-hidden="true"></span>
+            <span class="type-name">图文动态</span>
+            <input type="checkbox" class="cb" data-type="draw" checked />
+            <span class="cb-box" aria-hidden="true"></span>
+          </label>
+          <label class="type-row">
+            <span class="type-ico ico-word" aria-hidden="true"></span>
+            <span class="type-name">文字动态</span>
+            <input type="checkbox" class="cb" data-type="word" checked />
+            <span class="cb-box" aria-hidden="true"></span>
+          </label>
+          <label class="type-row">
+            <span class="type-ico ico-forward" aria-hidden="true"></span>
+            <span class="type-name">转发动态</span>
+            <input type="checkbox" class="cb" data-type="forward" checked />
+            <span class="cb-box" aria-hidden="true"></span>
+          </label>
+          <label class="type-row type-row-wide">
+            <span class="type-ico ico-live" aria-hidden="true"></span>
+            <span class="type-name">直播开播</span>
+            <input type="checkbox" class="cb" data-type="live" checked />
+            <span class="cb-box" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- 扫描间隔 -->
+      <section class="card">
+        <div class="card-title">扫描间隔</div>
+        <div class="seg" id="segInterval" role="tablist">
+          <button class="seg-item" data-v="1" role="tab">1 分</button>
+          <button class="seg-item is-active" data-v="3" role="tab">3 分</button>
+          <button class="seg-item" data-v="10" role="tab">10 分</button>
+          <button class="seg-item" data-v="30" role="tab">30 分</button>
+        </div>
+      </section>
+
+      <!-- 底部操作 -->
+      <footer class="actions">
+        <button class="btn btn-primary" id="btnRefresh">立即刷新</button>
+        <button class="btn btn-ghost" id="btnReadAll">全部已读</button>
+      </footer>
+
+      <p class="hint" id="hint">需登录 B 站后打开动态页才会开始统计</p>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

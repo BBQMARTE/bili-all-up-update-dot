@@ -1,0 +1,301 @@
+# B站全UP更新蓝点
+
+> A Chrome/Edge extension that shows the update dot for **ALL** followed uploaders on Bilibili's feed page — not just the frequently visited ones.
+
+B 站动态页顶部那排 UP 主头像，官方只会给「常看」的几十个 UP 打小蓝点，小众或更新慢的 UP 根本不出现。本插件接管这排头像的数据来源，让**所有已关注的 UP 主只要更新了就出现小蓝点**。
+
+蓝点的位置、样式、hover、点击跳转全部沿用 B 站原生 UI —— 插件不画任何 UI，只替换数据。
+
+---
+
+## 功能
+
+| 功能 | 说明 |
+| --- | --- |
+| 全量蓝点补全 | 所有关注 UP（含小众 / 低产）只要有更新，都出现在动态页顶部头像条并带蓝点 |
+| 全类型覆盖 | 视频投稿、文字动态、图文动态、转发动态、直播开播，可在设置里分别开关 |
+| 点击即已读 | 点开头像进入其动态页 / 空间页后，该 UP 的蓝点立即消失 |
+| 增量扫描 | 进入动态页扫一次 + 页面内定时（1 / 3 / 10 / 30 分钟可选），只拉上次之后的新动态，通常 1 个请求 |
+| 首次静默 | 第一次运行只建立基线，不点亮蓝点，避免装上就满屏蓝点 |
+| 工具栏角标 | 扩展图标显示当前未读 UP 数量 |
+
+---
+
+## 原理
+
+### 1. 蓝点的来源
+
+动态页顶部头像条的数据来自：
+
+```
+GET https://api.bilibili.com/x/polymer/web-dynamic/v1/portal   （Cookie: SESSDATA）
+
+data.up_list[] = { mid, uname, face, has_update, is_reserve_recall }
+```
+
+**小蓝点完全由 `has_update` 字段驱动**。官方只返回「常看」的几十个 UP，所以小众 UP 压根不在数组里。
+
+插件在页面上下文拦截这个请求的响应，把 `data.up_list` 替换成自己算出的完整列表，其余字段（`my_info`、`live_users`）原样保留。B 站自己的组件照常渲染，蓝点样式天然一致。
+
+### 2. 更新数据从哪来
+
+```
+GET https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type=all&offset=...
+```
+
+关注动态流是**时间倒序的全部关注**（不是算法推荐），因此沿时间轴增量翻页就能覆盖到所有关注 UP。
+
+停止条件（命中任一即停）：
+
+1. 某条动态 `pub_ts <= meta.lastMaxTs`（追平上次进度）
+2. `data.has_more === false` 或没有下一页 offset
+3. 翻页超过 5 页（防御死循环）
+
+常规情况只需 **1 个请求**。UP 主的昵称与头像直接从动态的 `modules.module_author` 取，无需额外拉取关注列表。
+
+### 3. 直播开播
+
+```
+GET https://api.live.bilibili.com/xlive/web-ucenter/user/following?page=1&page_size=30
+```
+
+该接口把「正在直播」排在最前，因此只取前 2 页。UP 下播后，由直播产生的蓝点会自动清除。
+
+### 4. WBI 签名
+
+B 站 Web 接口要求 `w_rid` / `wts` 签名，缺失会返回 `-403`。插件内置纯 JS MD5 + 官方 `MIXIN_KEY_ENC_TAB` 重排表（不引任何第三方库、不引 CDN，规避扩展 CSP）。
+
+签名被拒（`-403` / `-352` / `-401`）时自动退化为无签名重试一次；仍失败则本轮放弃，保留上次数据。
+
+实现已通过 bilibili-API-collect 的官方测试向量校验：
+
+```
+参数 { foo: '114', bar: '514', zab: '1919810' }，wts = 1702204169
+keys 7cd084941338484aae1ad9425b84077c / 4932caff0ff746eab6f01bf08b70ac45
+=> w_rid = 8f6f2b5b3d485fe1886cec6a0be8c5d4   ✅
+```
+
+### 5. 为什么所有请求都在页面上下文发
+
+MAIN world 脚本自动携带 B 站 Cookie，且与 B 站前端同源 CORS 行为一致。扩展 background 直连会有跨域 + Cookie 携带不可靠的问题。
+
+### 6. 降级保护
+
+以下情况一律**原样放行官方数据**，绝不破坏原页面：
+
+- 插件已停用
+- URL 不匹配 / JSON 解析失败 / 接口 `code !== 0`
+- 未登录（无 SESSDATA）
+- 从未成功扫描过（不会误清官方蓝点）
+
+---
+
+## 安装
+
+1. 下载 / 克隆本仓库到本地
+2. 打开 Chrome 或 Edge，地址栏输入 `chrome://extensions`（Edge 为 `edge://extensions`）
+3. 打开右上角「**开发者模式**」
+4. 点击「**加载已解压的扩展程序**」，选择本仓库根目录（即包含 `manifest.json` 的那一层）
+5. 登录 B 站，打开 <https://t.bilibili.com/>，刷新页面即可生效
+
+> 要求 Chrome / Edge **111 及以上**（用到 `world: "MAIN"` 的 content script）。
+
+### Windows / PowerShell 提示
+
+仓库路径若含中文或空格，命令中需加引号；也可先用变量定位目录再操作：
+
+```powershell
+$d = Get-ChildItem -Path "上级目录" -Directory | Select-Object -First 1
+Set-Location $d.FullName
+```
+
+---
+
+## 使用
+
+1. 打开动态页 <https://t.bilibili.com/>，顶部头像条会变成「所有更新过的 UP」，按更新时间从新到旧排列
+2. 点开某位 UP 的头像进入其动态页 / 空间页，该 UP 的蓝点立即消失
+3. 点击工具栏图标可打开设置面板
+
+### 设置项
+
+| 项 | 说明 | 默认 |
+| --- | --- | --- |
+| 启用插件 | 关闭后完全恢复 B 站官方行为 | 开 |
+| 计入更新的类型 | 视频 / 图文 / 文字 / 转发 / 直播 | 全开 |
+| 扫描间隔 | 页面打开时的轮询周期 | 3 分钟 |
+| 立即刷新 | 立刻重新扫一次动态流 | — |
+| 全部已读 | 清空所有未读标记 | — |
+
+---
+
+## 调试
+
+1. 打开浏览器控制台（F12），执行以下命令可查看运行状态：
+
+```js
+__BiliAllUpDot.debugInfo()
+```
+
+返回 `{ config, meta, total, unread, previewUpList }`，其中 `previewUpList` 是插件即将注入的 `up_list` 预览。
+
+2. 需要详细日志时，在控制台执行：
+
+```js
+__BiliAllUpDot.state.config.debug = true
+```
+
+之后每次扫描都会打印「扫描完成：新增 N 条，未读 UP M 位」「portal 响应已改写」等日志。
+
+3. 若蓝点不出现，按以下顺序自查：
+
+| 现象 | 排查 |
+| --- | --- |
+| 完全没变化 | 控制台执行 `__BiliAllUpDot.debugInfo()`，确认返回对象存在；不存在说明 content script 未注入（检查扩展是否启用、页面是否为 `t.bilibili.com`） |
+| `unread` 为空 | 确认已登录；把 `debug` 打开后看扫描日志里的 `code` 是否为 0 |
+| 扫描报 `-403` / `-352` | WBI 签名被风控，插件会自动退化为无签名重试；仍失败可稍后再试 |
+| `previewUpList` 有数据但页面没蓝点 | B 站可能改了接口地址或改用 XHR，看控制台是否有「portal 响应已改写」日志 |
+| 直播蓝点不出现 | 直播接口可能已调整，可在设置里关掉「直播开播」避免干扰 |
+
+---
+
+## 目录结构
+
+```
+.
+├── manifest.json                 # MV3 清单
+├── src/
+│   ├── injected/                 # MAIN world（页面上下文，带 Cookie）
+│   │   ├── bridge.js             # 原生 fetch/XHR 快照 + postMessage 消息桥 + 全局 state
+│   │   ├── wbi.js                # 纯 JS MD5 + WBI 签名
+│   │   ├── api.js                # portal / feed-all 分页 / 直播列表，含签名失败降级
+│   │   ├── scanner.js            # 增量扫描、未读状态模型、首轮基线
+│   │   ├── patch-portal.js       # fetch / XHR 拦截，up_list 合并替换
+│   │   ├── read-tracker.js       # 点击头像 / 进入空间页 标记已读 + 即时清除蓝点
+│   │   └── index.js              # 装配、加载持久化状态、定时扫描
+│   ├── content.js                # ISOLATED world：消息桥 + storage 读写
+│   ├── background.js             # Service Worker：默认配置 + 工具栏角标
+│   ├── popup/                    # 设置面板（html / css / js）
+│   └── assets/icons/             # 16 / 32 / 48 / 128 PNG
+├── scripts/gen-icons.mjs         # 图标生成（仅用 Node 内置 zlib，无第三方依赖）
+└── README.md
+```
+
+---
+
+## 已知限制
+
+- **需要登录**：未登录时 `feed/all` 拿不到关注动态，插件自动退化为官方行为。
+- **依赖接口地址**：核心机制是接管 `/x/polymer/web-dynamic/v1/portal`。若 B 站改了这个地址，蓝点补全失效，但页面本身不受影响（已做静默降级）。
+- **直播为尽力而为**：直播接口若变更，直播蓝点可能失效，可在设置中关闭该类型。
+- **已读状态按浏览器本地保存**：存在 `chrome.storage.local`，清除浏览器数据会重置。
+- **即时清除蓝点靠启发式匹配**：标记已读后按头像 URL 定位元素并隐藏小圆点；若 B 站改版导致即时隐藏失效，刷新页面后仍会按数据正确显示（数据层是准的）。
+
+---
+
+## 更新记录
+
+### v1.4.2 — 用「昵称反查」修复点击已读失败（实机定位）
+
+用户实机 `testRead()` 定位到唯一断点：mid 反查返回 null（其余 6 步全过）。
+原因：反查只依赖 `data-*` 埋点与头像图 hash，而生产环境埋点常缺失、头像条
+又是懒加载 —— 不在视口内的头像 `src` 还是占位图，hash 匹配不上。
+
+修复：新增**昵称文本反查**路径。B 站把每个 UP 的昵称渲染为
+`.bili-dyn-up-list__item__name` 的纯文本，而昵称在插件记录里全都有 ——
+与懒加载、埋点缺失、图片占位统统无关，是最可靠的定位方式。反查顺序调整为：
+昵称 → 头像 hash（补读 `src`/`data-src`/`srcset`）→ `data-*` 埋点。
+
+另：`t.bilibili.com/?host_mid=xxx` 进入时也会标记已读（B 站选中 UP 时
+把 host_mid 写进查询参数）。
+
+回归测试 6 项通过；关键用例完全复刻实机失败场景（懒加载占位图 + 无埋点）。
+
+### v1.4.1 — 新增一键自检
+
+- 控制台执行 `__BiliAllUpDot.testRead()`：模拟「点击头像 → 已读 → 持久化 → 读回」全流程，逐步输出 PASS/FAIL（存在未读 → 页面定位头像 → 反查 mid → 蓝点 span 存在 → markRead → 蓝点即时隐藏 → 存储写回）。在真实登录环境下哪一步红了，问题就在哪一步。
+- `debugInfo()` 顶部现在显示版本号，可用来确认扩展是否真的更新到位。
+
+### v1.4.0 — 修复「已读蓝点刷新后复活」的真正根因（相对时间漂移）
+
+这是 v1.3.0 没修到的深层原因，也是本插件最隐蔽的一个 bug。
+
+**现象**：点开头像蓝点消失，刷新页面蓝点又回来。
+
+**根因**：增量扫描的「追平进度」判定用的是 `pub_ts`。但 B 站 `feed/all` 的 `pub_time` 经常是**相对时间**（如「1小时前」），解析出的时间戳会随当前时间**漂移** —— 每次刷新重新解析，同一条动态算出的 ts 总比上次大，于是在扫描器眼里它永远是「新动态」，已读标记被一遍遍冲掉。
+
+**修复**：增量游标改用**动态 id（`id_str`，雪花序、稳定不变）**，在 `meta.seenIds` 里维护最近 500 条已见动态。只有没见过的 id 才算新动态，与时间戳彻底解耦。拿不到 id 的动态宁可漏报也不重复报。
+
+回归测试 9 项通过，关键断言：**同一批动态在相对时间从「3小时前」漂移成「1分钟前」后，不产生任何未读**；已读后再次扫描不复活；真正的新动态仍能正常点亮。
+
+### 实机自检工具
+
+`scripts/cdp-probe.mjs` 会用 Chromium 加载本扩展、打开真实动态页，通过 Chrome DevTools 协议验证注入与拦截链路：
+
+```
+node scripts/cdp-probe.mjs
+```
+
+输出：是否注入 MAIN world、`XMLHttpRequest` 是否被接管、真实 portal 请求是否经过插件。
+
+> 注意：Google 品牌版 Chrome 从 137 起移除了 `--load-extension` 命令行参数，
+> 因此自检工具默认使用 Playwright 缓存内的 Chromium（非品牌版）。
+> 可用环境变量 `PROBE_CHROME` 指定其它 Chromium 内核浏览器路径。
+
+### v1.3.0 — 修复「点开已读，刷新后蓝点又回来」
+
+**现象**：点击头像蓝点消失，但刷新页面后蓝点又出现。
+
+**根因**：蓝点消失其实是 **B 站自己的代码**干的（`handleSelectUp` 把 `has_update` 置 false），而插件的已读标记压根没触发。因为头像条 item 是 `<div>` + Vue `@click`，**既没有 `<a>` 链接也没有 `data-mid` 属性**，而插件此前只靠这两样定位 mid。
+
+**修复**：mid 反查改为三级策略 ——
+1. `v-log` 埋点指令序列化进 `data-*` 属性的 JSON（内含 `mid`）
+2. 用 item 内头像图的唯一 hash 反查插件记录里的 `face`
+3. `a[href]` 指向空间页（原有路径，并补了 `getAttribute('href')` 兜底）
+
+另加一道**保险**：监听蓝点 DOM 被移除（B 站在 URL 带 `host_mid` 进入等场景下不经过点击也会清蓝点）。因 Vue 重渲染 `v-for` 时也会移动节点、触发同样的 DOM 移除事件，故延迟 800ms 复查该头像确实没有蓝点了才标记，避免把重渲染误判成已读。
+
+回归测试 8 项全部通过（覆盖三条判定路径 + 误标防护 + 全部已读）。
+
+### v1.2.0 — 找到并修复「检测到了但没有蓝点」
+
+从 B 站 bundle 里挖到决定性的一行：
+
+```js
+Array.isArray(a) ? this.upList = a
+                 : ( this.upList = a.items || [], ... )
+```
+
+**`up_list` 有两种数据形态**：旧版是数组，而现在动态页请求 portal 时带 `up_list_more:1`，服务端返回的是**对象 `{ items, has_more, offset }`**。v1.1.0 只处理了数组形态，遇到对象就静默放行 —— 这正是「`unread` 有数据、页面却一个蓝点都没有」的准确原因。
+
+- 兼容两种形态；对象形态下只替换 `items`，**保留 `has_more` / `offset`**，不破坏 B 站「加载更多」分页
+- `patchPortalText` 现在会说明每一次放行的具体原因（非 JSON / code 非 0 / up_list 形态未知），配合 `debugInfo()` 开启日志可直接定位
+- `debugInfo()` 增加**页面 DOM 诊断**（头像条是否存在、item 数、蓝点 span 数），并在检测到异常时直接给出结论
+- **「立即刷新」改为重载动态页**：v1.1.0 之前它只是重新扫描存数据，页面那排头像不会重绘，所以看起来毫无作用；现在刷新后页面重载，会带着最新数据重新请求 portal
+
+### v1.1.0 — 修复蓝点完全不出现
+
+通过抓取 B 站动态页真实 bundle（`s1.hdslb.com/bfs/static/2233-monorepo/dyn-home/...`）定位到根因：
+
+1. **改写时机错误（主因）**：B 站的请求封装基于 `XMLHttpRequest`（bundle 内出现 15 次，`fetch` 仅 2 次），且它在 `r.open()` **之前**就把 `onreadystatechange` 赋好了。v1.0.0 的补丁是在 `send()` 里追加监听器，而监听器按注册顺序触发 —— 页面的处理器先读到未改写的 `responseText`，补丁永远晚一步。
+   **修复**：改为覆写 `XMLHttpRequest.prototype.responseText` / `response` 的 getter，在页面「读」的那一刻同步改写，与监听器顺序完全无关。
+
+2. **扫描失败污染状态**：一次接口失败也会把 `baselineDone` / `lastScanAt` 写成已就绪，可能导致误清官方蓝点。现在只有真的拿到过数据才置位。
+
+3. **新增廉价轮询**：复用 B 站自己的 `/x/polymer/web-dynamic/v1/feed/all/update`（官方每 30 秒打一次、只返回一个数字），`update_num > 0` 才真正翻页扫描，几乎零开销做到准实时。
+
+4. **字段解析加固**：`pub_ts` 缺失时依次回退到 `pub_time` 绝对/相对时间解析，最后兜底当前时间 —— 宁可多打一个蓝点，也不漏检。
+
+5. **蓝点定位精确化**：从 bundle 确认蓝点 DOM 为 `.bili-dyn-up-list__item__face > span`（无 class 的裸 span），已读清除改为精确选择器优先、启发式兜底。
+
+回归测试 12 项全部通过（在等价 realm 中复刻 B 站 XHR 用法验证）。
+
+### v1.0.0 — 首版
+
+---
+
+## 隐私
+
+- 所有请求都发往 `*.bilibili.com`，插件不含任何外部服务器、不含任何第三方库、不上传任何数据。
+- 唯一存储是浏览器本地的 `chrome.storage.local`（配置、UP 主昵称/头像/时间戳、未读标记）。
+- 未申请 `tabs` 权限，不读取浏览记录；popup 通过向页面广播 PING 来定位 B 站标签页。
