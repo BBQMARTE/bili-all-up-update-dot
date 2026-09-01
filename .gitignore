@@ -1,6 +1,9 @@
 # IDE / 本地工具数据（CodeBuddy 项目缓存，勿提交）
 .codebuddy/
 
+# 临时提交消息文件
+_commitmsg.txt
+
 # Node
 node_modules/
 npm-debug.log*
