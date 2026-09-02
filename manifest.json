@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "B站全UP更新蓝点",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "B站动态页顶部头像条：所有已关注的UP主只要有更新都会出现小蓝点，而不只是常看的几个。",
   "minimum_chrome_version": "111",
   "permissions": ["storage"],

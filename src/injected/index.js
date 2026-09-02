@@ -172,7 +172,7 @@
     var faces = document.querySelectorAll('.bili-dyn-up-list__item__face__img');
 
     var report = {
-      version: '1.4.2',
+      version: '1.5.0',
       当前页面: location.href,
       配置: NS.state.config,
       meta: NS.state.meta,

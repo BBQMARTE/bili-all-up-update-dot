@@ -18,11 +18,41 @@
   var hiddenMids = new Set();
 
   // ---------------- 标记已读 ----------------
-  NS.markRead = function (mid) {
+  /**
+   * @param {string} mid
+   * @param {{name?:string, face?:string}} [info] 从 DOM 补的昵称/头像，
+   *   用于「插件此前从未记录过这个 UP」时建档（官方常看列表里的人常属此类）
+   */
+  NS.markRead = function (mid, info) {
     mid = String(mid || '');
     if (!mid || !/^\d+$/.test(mid)) return false;
+
     var rec = NS.state.updates[mid];
-    if (!rec || !rec.unread) return false;
+
+    // 插件此前没记录过（多为官方常看列表里的 UP）：也要建一条「已读」记录，
+    // 否则刷新后官方 has_update=true 会让他的蓝点复活。
+    if (!rec) {
+      rec = {
+        mid: mid,
+        name: (info && info.name) || '',
+        face: (info && info.face) || '',
+        lastPubTs: 0,
+        type: '',
+        kind: 'other',
+        unread: false,
+        seenAt: Date.now(),
+      };
+      NS.state.updates[mid] = rec;
+      hiddenMids.add(mid);
+      NS.persist();
+      NS.log('新建已读记录（此前未记录过）：', rec.name || mid, mid);
+      return true;
+    }
+
+    if (info && info.name && !rec.name) rec.name = info.name;
+    if (info && info.face && !rec.face) rec.face = info.face;
+
+    if (!rec.unread) return false;
 
     rec.unread = false;
     rec.seenAt = Date.now();
@@ -31,6 +61,20 @@
     hideDotForMid(mid, rec.face, rec.name);
     NS.log('已标记已读：', rec.name || mid, mid);
     return true;
+  };
+
+  /** 从点击到的头像条 item 提取身份并标记已读 */
+  NS.markReadFromItem = function (item) {
+    if (!item) return false;
+    var mid = midFromItemElement(item);
+    if (!mid) return false;
+    var info = { name: '', face: '' };
+    var nameEl = item.querySelector('.bili-dyn-up-list__item__name');
+    if (nameEl) info.name = String(nameEl.textContent || '').trim();
+    var img =
+      item.querySelector('.bili-dyn-up-list__item__face__img') || item.querySelector('img');
+    if (img) info.face = imgSrcOf(img);
+    return NS.markRead(mid, info);
   };
 
   NS.markAllRead = function () {
@@ -297,10 +341,14 @@
     if (!name) return null;
     var n = String(name).replace(/\s+/g, '');
     if (!n) return null;
+    // 1) 插件记录里找
     for (var mid in NS.state.updates) {
       var r = NS.state.updates[mid];
       if (r && r.name && String(r.name).replace(/\s+/g, '') === n) return String(mid);
     }
+    // 2) 官方 up_list 缓存兜底（针对插件从未记录过的官方常看 UP）
+    var oc = NS.officialCache;
+    if (oc && oc.byName && oc.byName[n]) return String(oc.byName[n]);
     return null;
   }
 
@@ -394,7 +442,14 @@
   document.addEventListener(
     'click',
     function (e) {
-      var mid = midFromEventTarget(e.target);
+      var t = e.target;
+      if (!t || !t.closest) return;
+      // 头像条 item：走 markReadFromItem，能把昵称/头像一并带进已读记录
+      var item = t.closest('.bili-dyn-up-list__item');
+      if (item) {
+        if (NS.markReadFromItem(item)) return;
+      }
+      var mid = midFromEventTarget(t);
       if (mid) NS.markRead(mid);
     },
     true

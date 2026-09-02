@@ -79,11 +79,18 @@
         return x && !used.has(Number(x.mid));
       })
       .map(function (x) {
+        // 关键修复：官方列表里可能仍带着用户已经点过的 UP，且 its has_update
+        // 仍为 true（B站自己的「有更新」状态会随算法反复变化），原样保留会让
+        // 已读蓝点「刷新后复活、再刷新又消失」地反复横跳。
+        // 规则：插件记录里明确标记过「已读」的 UP，一律强制不打蓝点；
+        // 若该 UP 之后又发了新动态，扫描器会重新把它标成未读，届时自然点亮。
+        var rec = all[String(x.mid)];
+        var readByUser = rec && rec.unread === false;
         return {
           mid: x.mid,
           uname: x.uname,
           face: x.face,
-          has_update: !!x.has_update,
+          has_update: readByUser ? false : !!x.has_update,
           is_reserve_recall: !!x.is_reserve_recall,
         };
       });
@@ -93,6 +100,26 @@
     var limit = Math.max(Number(cfg.maxUpList) || 60, mapped.length);
     return merged.slice(0, limit);
   };
+
+  /**
+   * 官方 up_list 缓存（内存态，每次 portal 请求都会重建）。
+   * 用途：点击「插件从未扫描记录过的 UP」（比如官方常看列表里的人）时，
+   * 用昵称反查到他的 mid 并建档为已读，避免刷新后官方蓝点复活。
+   */
+  NS.officialCache = { byName: {}, byMid: {} };
+  function rememberOfficial(list) {
+    if (!Array.isArray(list)) return;
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (!it || it.mid == null) continue;
+      var mid = String(it.mid);
+      var name = String(it.uname || '');
+      var face = String(it.face || '');
+      NS.officialCache.byMid[mid] = { name: name, face: face };
+      var n = name.replace(/\s+/g, '');
+      if (n) NS.officialCache.byName[n] = mid;
+    }
+  }
 
   NS.patchPortalText = function (text) {
     if (!text || typeof text !== 'string') return text;
@@ -129,6 +156,9 @@
       );
       return text;
     }
+
+    // 记住官方列表里的 UP（含 mid/昵称/头像），供点击时反查从未记录过的人
+    rememberOfficial(officialList);
 
     var list = NS.buildUpList(officialList);
     if (!list) {
