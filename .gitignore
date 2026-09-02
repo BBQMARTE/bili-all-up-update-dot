@@ -4,6 +4,9 @@
 # 临时提交消息文件
 _commitmsg.txt
 
+# 本地打包产物
+*.zip
+
 # Node
 node_modules/
 npm-debug.log*
