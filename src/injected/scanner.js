@@ -19,7 +19,9 @@
   var MAX_LIVE_PAGES = 2; // 直播列表最多翻页数
   var OLD_KEEP_SEC = 90 * 24 * 3600; // 已读条目保留 90 天
   var MAX_RECORDS = 1000; // 记录上限，超出按时间淘汰
-  var MAX_SEEN_IDS = 500; // 「已见动态 id」缓存上限，作为增量游标
+  // 「已见动态 id」游标上限。关注 UP 多、动态密度高时会滚动淘汰，
+  // 因此不能只靠它判重（已读保护由 UP 维度的 readAtTs 兜底）。
+  var MAX_SEEN_IDS = 2000;
 
   // ---------------- 解析 ----------------
   function toSec(v) {
@@ -259,13 +261,22 @@
       }
       if (it.name) rec.name = it.name;
       if (it.face) rec.face = it.face;
-      if (it.isNew && NS.typeEnabled(it.kind)) rec.unread = true;
+
+      // 已读保护（UP 维度）：
+      // seenIds 是滚动淘汰的游标（上限 MAX_SEEN_IDS），你关注 100+ 个 UP 时，
+      // 看过的动态 id 迟早会被挤出缓存；一旦这些老动态之后又在 feed 中出现，
+      // 仅靠 id 判重就会把它误当成「新动态」重新点亮 —— 这就是已读蓝点
+      // 「刷新几次又冒出来」的根源。
+      // 因此再加一层 UP 维度判定：读过这个 UP 时记下 readAtTs（当时他最新
+      // 动态的时间），本条动态不比它新就不点亮；他真发了更新的动态才重新亮。
+      var alreadyRead = rec.readAtTs && it.ts <= rec.readAtTs;
+      if (it.isNew && !alreadyRead && NS.typeEnabled(it.kind)) rec.unread = true;
+
       if (it.ts > (rec.lastPubTs || 0)) {
         rec.lastPubTs = it.ts;
         rec.type = it.type;
         rec.kind = it.kind;
       }
-      if (!baseline && NS.typeEnabled(it.kind)) rec.unread = true;
     }
 
     // --- 3. 直播开播 ---

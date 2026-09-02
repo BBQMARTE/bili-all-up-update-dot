@@ -56,10 +56,14 @@
 
     rec.unread = false;
     rec.seenAt = Date.now();
+    // 记住「读到哪个时间点为止」，供扫描器做已读保护：
+    // 不比这个时间新的动态不再重新点亮（防 seenIds 滚动淘汰导致误判）。
+    // 从未记录过动态时间时（多为官方常看列表里的人）退化为当前时间。
+    rec.readAtTs = rec.lastPubTs || Math.floor(Date.now() / 1000);
     hiddenMids.add(mid);
     NS.persist();
     hideDotForMid(mid, rec.face, rec.name);
-    NS.log('已标记已读：', rec.name || mid, mid);
+    NS.log('已标记已读：', rec.name || mid, mid, 'readAtTs=' + rec.readAtTs);
     return true;
   };
 
@@ -80,11 +84,13 @@
   NS.markAllRead = function () {
     var n = 0;
     var mid;
+    var nowSec = Math.floor(Date.now() / 1000);
     for (mid in NS.state.updates) {
       var r = NS.state.updates[mid];
       if (r && r.unread) {
         r.unread = false;
         r.seenAt = Date.now();
+        r.readAtTs = r.lastPubTs || nowSec;
         hiddenMids.add(String(mid));
         n++;
       }
