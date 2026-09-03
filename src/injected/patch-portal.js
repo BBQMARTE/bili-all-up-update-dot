@@ -42,14 +42,24 @@
     }
 
     if (!unread.length) {
-      // 没有任何未读时：
-      // 扫描近期正常完成过 -> 显式清掉官方蓝点，避免「已全部已读却仍有蓝点」
-      // 扫描失败或从未扫描过   -> 原样放行官方数据，绝不误伤
-      var meta = NS.state.meta || {};
-      var graceMin = Math.max(30, (Number(cfg.intervalMin) || 3) * 6);
-      var scanFresh =
-        meta.baselineDone && meta.lastScanAt && Date.now() - meta.lastScanAt < graceMin * 60 * 1000;
-      if (!scanFresh) return null;
+      // 没有任何未读时的策略：
+      // - updates 里存在「已读记录」（用户点过蓝点/进过空间）→ 说明本插件
+      //   已经在工作并管理着这些 UP 的状态。官方并不知道用户看过谁，它的
+      //   has_update 仍会是 true —— 原样放行就会让已读蓝点复活。因此全部
+      //   强制熄灭。
+      // - updates 为空（全新安装 / 从未成功扫描）→ 放行官方数据，绝不误伤。
+      var hasReadRecord = false;
+      for (mid in all) {
+        var rr = all[mid];
+        if (rr && rr.seenAt > 0) {
+          hasReadRecord = true;
+          break;
+        }
+      }
+      if (!hasReadRecord) {
+        NS.log('无未读且无已读记录（从未管理过），放行官方数据');
+        return null;
+      }
       return (Array.isArray(officialList) ? officialList : []).map(function (x) {
         return Object.assign({}, x, { has_update: false });
       });

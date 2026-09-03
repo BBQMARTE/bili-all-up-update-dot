@@ -171,6 +171,28 @@
     var dots = document.querySelectorAll('.bili-dyn-up-list__item__face > span');
     var faces = document.querySelectorAll('.bili-dyn-up-list__item__face__img');
 
+    // 蓝点来源对比：逐个检查页面上带蓝点的 item，与插件未读名单对照。
+    // 「带蓝点但不在插件未读名单里」= 蓝点来自官方数据（拦截/熄灭未生效）
+    var dotUpNames = [];
+    var fromPlugin = [];
+    var fromOfficial = [];
+    for (var di = 0; di < items.length; di++) {
+      var it = items[di];
+      if (!it.querySelector('.bili-dyn-up-list__item__face > span')) continue;
+      var nameEl = it.querySelector('.bili-dyn-up-list__item__name');
+      var nm = nameEl ? String(nameEl.textContent || '').replace(/\s+/g, '') : '(未知昵称)';
+      dotUpNames.push(nm);
+      var hit = false;
+      for (var m2 in unread) {
+        if (String(unread[m2].name).replace(/\s+/g, '') === nm) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) fromPlugin.push(nm);
+      else fromOfficial.push(nm);
+    }
+
     var report = {
       version: '1.5.3',
       当前页面: location.href,
@@ -186,6 +208,11 @@
         头像条item数量: items.length,
         头像img数量: faces.length,
         蓝点span数量: dots.length,
+        带蓝点的UP: dotUpNames,
+      },
+      蓝点来源对比: {
+        来自插件未读: fromPlugin,
+        不在插件未读里_异常: fromOfficial,
       },
     };
 
@@ -197,6 +224,12 @@
         '[全UP蓝点] 页面上没有找到头像条（.bili-dyn-up-list）。\n' +
           '可能原因：① 你不在动态页（需打开 t.bilibili.com）；② B 站改版换了组件类名。\n' +
           '请在动态页刷新后再执行一次本命令。'
+      );
+    } else if (fromOfficial.length > 0) {
+      console.warn(
+        '[全UP蓝点] 发现 ' + fromOfficial.length + ' 个蓝点不在插件未读名单里：\n' +
+          '  ' + fromOfficial.join('、') + '\n' +
+          '这些蓝点来自官方数据（未被拦截/熄灭）。请把本报告完整复制发我。'
       );
     } else if (report.页面DOM诊断.蓝点span数量 === 0 && unread.length > 0) {
       console.warn(
