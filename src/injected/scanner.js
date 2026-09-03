@@ -22,6 +22,7 @@
   // 「已见动态 id」游标上限。关注 UP 多、动态密度高时会滚动淘汰，
   // 因此不能只靠它判重（已读保护由 UP 维度的 readAtTs 兜底）。
   var MAX_SEEN_IDS = 2000;
+  var MAX_TS_CACHE = 3000; // 动态时间戳缓存上限（消除相对时间漂移用）
 
   // ---------------- 解析 ----------------
   function toSec(v) {
@@ -56,13 +57,6 @@
     var mid = author.mid;
     if (!mid) return null;
 
-    var ts = toSec(author.pub_ts);
-    if (!ts) ts = tsFromText(author.pub_time);
-    // 注意：这里不再用 Date.now() 兜底。
-    // 一旦 ts 退化成「当前时间」，每次扫描都会得到一个更大的值，
-    // 于是同一条动态永远比「已读进度」新 —— 蓝点每刷新必复活。
-    // 真正的排序/比较基准改用下面的 seq（雪花序，永不漂移）。
-
     var type = it.type || '';
     // feed/all 里可能是 http://，注入 up_list 后会被浏览器按混合内容拦截
     var face = author.face || '';
@@ -80,6 +74,24 @@
     if (dynId && /^\d+$/.test(String(dynId))) {
       var nv = Number(dynId);
       if (isFinite(nv) && nv > 0) seq = nv;
+    }
+
+    // 时间戳解析（带缓存，消除相对时间漂移）：
+    // B 站很多动态只给相对时间（「3小时前」），每次解析都会得到一个更大的
+    // 绝对值 —— 同一条动态的时间戳会不断「变新」，导致所有基于时间的
+    // 已读判据失效。这里对同一条动态只解析一次并缓存，之后永远复用。
+    var ts = 0;
+    var cache = NS.state.meta && NS.state.meta.tsById;
+    if (!cache) {
+      cache = NS.state.meta.tsById = {};
+    }
+    if (dynId && cache[dynId]) {
+      ts = cache[dynId];
+    } else {
+      ts = toSec(author.pub_ts);
+      if (!ts) ts = tsFromText(author.pub_time);
+      // 仍然不用 Date.now() 兜底：那会让时间戳自我膨胀，每次刷新都算新动态
+      if (ts && dynId) cache[dynId] = ts;
     }
 
     return {
@@ -148,6 +160,20 @@
       var keep = {};
       for (var i = 0; i < MAX_RECORDS; i++) keep[String(list[i].mid)] = list[i];
       NS.state.updates = keep;
+    }
+
+    // 时间戳缓存上限：雪花 id 越大越新，保留最大的 N 条即可
+    var tsById = st.meta.tsById;
+    if (tsById) {
+      var ids = Object.keys(tsById);
+      if (ids.length > MAX_TS_CACHE) {
+        ids.sort(function (a, b) {
+          return Number(b) - Number(a);
+        });
+        var kept = {};
+        for (var k = 0; k < MAX_TS_CACHE; k++) kept[ids[k]] = tsById[ids[k]];
+        st.meta.tsById = kept;
+      }
     }
   }
 
@@ -285,7 +311,24 @@
       var alreadyRead =
         (rec.readAtSeq && it.seq > 0 && it.seq <= rec.readAtSeq) ||
         (rec.readAtTs && it.ts > 0 && it.ts <= rec.readAtTs);
-      if (it.isNew && !alreadyRead && NS.typeEnabled(it.kind)) rec.unread = true;
+
+      if (it.isNew && !alreadyRead && NS.typeEnabled(it.kind)) {
+        // 复活追踪：把「用户明明点过却又被点亮」的完整判定依据打出来，
+        // 便于一次性定位原因，而不是靠猜。
+        if (rec.seenAt) {
+          console.warn(
+            '[全UP蓝点] 复活警告：准备重新点亮用户已读过的 UP\n' +
+              '  UP：' + rec.name + '（mid=' + it.mid + '）\n' +
+              '  本次动态：seq=' + it.seq + ' ts=' + it.ts + '（' + (it.ts ? new Date(it.ts * 1000).toISOString() : '未知') + '）\n' +
+              '  已读进度：readAtSeq=' + (rec.readAtSeq || 0) + ' readAtTs=' + (rec.readAtTs || 0) + '\n' +
+              '  该UP记录：lastSeq=' + (rec.lastSeq || 0) + ' lastPubTs=' + (rec.lastPubTs || 0) + '\n' +
+              '  判定：seq判据=' + !!(rec.readAtSeq && it.seq > 0 && it.seq <= rec.readAtSeq) +
+              ' 时间判据=' + !!(rec.readAtTs && it.ts > 0 && it.ts <= rec.readAtTs) +
+              ' isNew=' + it.isNew
+          );
+        }
+        rec.unread = true;
+      }
 
       if (it.ts > (rec.lastPubTs || 0)) {
         rec.lastPubTs = it.ts;
