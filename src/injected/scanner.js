@@ -23,6 +23,13 @@
   // 因此不能只靠它判重（已读保护由 UP 维度的 readAtTs 兜底）。
   var MAX_SEEN_IDS = 2000;
   var MAX_TS_CACHE = 3000; // 动态时间戳缓存上限（消除相对时间漂移用）
+  // 下播后多久内再次开播仍视为「同一场次」：
+  // 防止关注列表接口抖动（直播 UP 短暂从列表消失又出现）被误判成新场次
+  var LIVE_GRACE_SEC = 600;
+  // 「新动态」时效窗口：动态流里翻到的条目若早于该窗口（典型：刚关注的 UP
+  // 的历史动态、或排序异常导致的老条目被重新翻到），一律视为补扫，只建档
+  // 不点亮。宁漏报不误报：错过几天前的内容可接受，乱点亮旧内容不可接受。
+  var STALE_SEC = 72 * 3600;
 
   // ---------------- 解析 ----------------
   function toSec(v) {
@@ -163,7 +170,9 @@
     }
 
     // 时间戳缓存上限：雪花 id 越大越新，保留最大的 N 条即可
-    var tsById = st.meta.tsById;
+    // （注意：cleanup 的作用域里没有 st，必须用 NS.state，否则每轮扫描到
+    // 这里就抛 ReferenceError，后续 persist 与 SCAN_DONE 全部被跳过）
+    var tsById = NS.state.meta.tsById;
     if (tsById) {
       var ids = Object.keys(tsById);
       if (ids.length > MAX_TS_CACHE) {
@@ -172,7 +181,7 @@
         });
         var kept = {};
         for (var k = 0; k < MAX_TS_CACHE; k++) kept[ids[k]] = tsById[ids[k]];
-        st.meta.tsById = kept;
+        NS.state.meta.tsById = kept;
       }
     }
   }
@@ -214,6 +223,8 @@
     var stop = false;
     var maxTs = st.meta.lastMaxTs || 0;
     var apiOk = false;
+    var nowSecScan = Math.floor(Date.now() / 1000);
+    var staleSkipped = 0;
 
     // 基线：首次运行，或从旧版本升级过来 seenIds 还没建立时，都只记录不点蓝点
     var seenIds = Array.isArray(st.meta.seenIds) ? st.meta.seenIds : [];
@@ -254,8 +265,11 @@
         }
         seenSet[p.id] = 1;
         newIds.push(p.id);
-        // 基线阶段也要记录 name/face（方便展示），只是不打蓝点
-        p.isNew = !baseline;
+        // 基线阶段只记录不打蓝点；非基线阶段还要求条目足够新：
+        // 超窗旧条目（刚关注 UP 的历史动态等）只建档补扫，绝不点亮。
+        // ts 取不到时保守处理：不点亮（宁漏报不误报）。
+        p.isNew = !baseline && p.ts > 0 && nowSecScan - p.ts <= STALE_SEC;
+        if (!baseline && !p.isNew) staleSkipped++;
         items.push(p);
       }
 
@@ -338,6 +352,26 @@
       if (it.seq > (rec.lastSeq || 0)) rec.lastSeq = it.seq;
     }
 
+    // --- 2.5 自愈：熄灭历史错误点亮/长期无人处理的超窗未读 ---
+    // 旧版本（<1.5.5）会把补扫到的老动态点亮，这类错误记录会一直挂着；
+    // 这里按 72h 时效窗口统一回收：非直播类、超窗、且仍未读的记录自动熄灭。
+    // 直播记录不受影响（由下播逻辑负责清除）。
+    for (var sm in st.updates) {
+      var sr = st.updates[sm];
+      if (
+        sr &&
+        sr.unread &&
+        sr.kind !== 'live' &&
+        sr.lastPubTs &&
+        nowSecScan - sr.lastPubTs > STALE_SEC
+      ) {
+        sr.unread = false;
+        sr.seenAt = Date.now();
+        changed = true;
+        NS.log('自动熄灭超窗旧未读：' + (sr.name || sm) + '（mid=' + sm + '）');
+      }
+    }
+
     // --- 3. 直播开播 ---
     var liveMids = {};
     if (NS.typeEnabled('live')) {
@@ -360,6 +394,10 @@
             name: room.uname || room.title || '',
             face: room.face || '',
             title: room.title || '',
+            // 场次信息：live_start_time 每场直播不同，是区分场次的理想字段；
+            // roomid 是 UP 固定房间号、跨场次不变，只能做辅助不能当场次键
+            startTs: toSec(room.live_start_time),
+            roomid: String(room.roomid || room.room_id || ''),
           };
         }
         if (rooms.length < 30) break;
@@ -372,35 +410,97 @@
         var info = liveMids[midKey];
         var lr2 = st.updates[midKey];
         if (!lr2) {
+          // 新建直播记录：点亮一次，并记下本场次键
           lr2 = {
             mid: midKey,
             name: info.name,
             face: info.face,
-            lastPubTs: nowSecL,
+            lastPubTs: info.startTs || nowSecL,
             type: 'DYNAMIC_TYPE_LIVE',
             kind: 'live',
             unread: true,
             seenAt: 0,
+            liveUp: true,
+            liveSessionKey: info.startTs
+              ? 's' + info.startTs
+              : info.roomid
+                ? 'r' + info.roomid + ':' + nowSecL
+                : 't' + nowSecL,
           };
           st.updates[midKey] = lr2;
           changed = true;
-        } else if (lr2.kind === 'live') {
+          continue;
+        }
+
+        if (info.name) lr2.name = info.name;
+        if (info.face) lr2.face = info.face;
+
+        if (lr2.kind !== 'live') {
+          // 该 UP 最近有其它类型动态，直播状态不覆盖其记录
+          continue;
+        }
+
+        // --- 场次判定（开播状态机）---
+        // 根因修复：旧逻辑每轮扫描无条件 unread=true + lastPubTs=now，
+        // 导致直播中的 UP 点掉蓝点后 30 秒必复活。
+        // 现在只有「新场次」才重新点亮；同场次内绝不触碰 unread/lastPubTs。
+        var curKey;
+        if (info.startTs) {
+          // 有开播时刻：直接用场次时间做键，跨刷新稳定
+          curKey = 's' + info.startTs;
+        } else if (lr2.liveUp) {
+          // 无开播时刻字段，但本场直播未间断：维持原场次键
+          curKey = lr2.liveSessionKey || 't' + nowSecL;
+        } else if (
+          lr2.liveSessionKey &&
+          nowSecL - (lr2.liveDownAt || 0) < LIVE_GRACE_SEC
+        ) {
+          // 刚下播不久又出现在列表：接口抖动保护，视为同场次
+          curKey = lr2.liveSessionKey;
+        } else {
+          // 真正的新场次：用首见时刻做键（宁漏报不误报）
+          curKey = 't' + nowSecL;
+        }
+
+        if (curKey !== (lr2.liveSessionKey || '')) {
+          // 新场次开播：点亮一次
+          NS.log(
+            '直播新场次：' + (lr2.name || midKey) +
+              ' key=' + lr2.liveSessionKey + ' → ' + curKey
+          );
           if (!lr2.unread) changed = true;
           lr2.unread = true;
-          lr2.lastPubTs = nowSecL;
-          if (info.name) lr2.name = info.name;
-          if (info.face) lr2.face = info.face;
+          lr2.seenAt = 0;
+          lr2.liveSessionKey = curKey;
+          lr2.liveUp = true;
+          lr2.lastPubTs = info.startTs || nowSecL;
         } else {
-          // 该 UP 最近有其它类型动态，直播状态不覆盖其记录
+          // 同场次：只确认在线状态，已读状态原样保留
+          lr2.liveUp = true;
         }
       }
-      // 已下播的：清掉由直播产生的未读
+      // 已下播的：清掉由直播产生的未读，并记下下播时刻供宽限期判定
       for (midKey in st.updates) {
         var rr = st.updates[midKey];
-        if (rr && rr.kind === 'live' && rr.unread && !liveMids[midKey]) {
-          rr.unread = false;
-          rr.seenAt = Date.now();
+        if (rr && rr.kind === 'live' && rr.liveUp && !liveMids[midKey]) {
+          rr.liveUp = false;
+          rr.liveDownAt = nowSecL;
+          if (rr.unread) {
+            rr.unread = false;
+            rr.seenAt = Date.now();
+            changed = true;
+          }
+        }
+      }
+    } else {
+      // 直播提醒已关闭：清掉所有由直播产生的未读，避免残留蓝点
+      for (midKey in st.updates) {
+        var lr3 = st.updates[midKey];
+        if (lr3 && lr3.kind === 'live' && lr3.unread) {
+          lr3.unread = false;
+          lr3.seenAt = Date.now();
           changed = true;
+          NS.log('直播提醒已关闭，清除直播未读：' + (lr3.name || midKey));
         }
       }
     }
@@ -427,6 +527,7 @@
     NS.log(
       '扫描完成（' + (reason || '') + '）：新增 ' +
         items.length + ' 条，未读 UP ' + unreadCount + ' 位' +
+        (staleSkipped ? '，跳过 ' + staleSkipped + ' 条超窗旧动态' : '') +
         (apiOk ? '' : '，接口未成功')
     );
 

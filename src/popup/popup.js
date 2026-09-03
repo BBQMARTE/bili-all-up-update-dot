@@ -10,7 +10,10 @@
     intervalMin: 3,
     maxUpList: 60,
     debug: false,
-    types: { av: true, word: true, draw: true, forward: true, live: true },
+    // 直播默认关闭：B 站直播在动态流/空间页没有可点开看的「直播动态」卡片，
+    // 蓝点点开后无内容可看，体感等于误报。想要开播提醒可手动勾选。
+    types: { av: true, word: true, draw: true, forward: true, live: false },
+    liveOptIn: false,
   };
 
   var $ = function (sel) {
@@ -68,6 +71,13 @@
     chrome.storage.local.get([KEY_CONFIG, KEY_UPDATES], function (res) {
       config = Object.assign({}, DEFAULT_CONFIG, res[KEY_CONFIG] || {});
       config.types = Object.assign({}, DEFAULT_CONFIG.types, (res[KEY_CONFIG] || {}).types || {});
+      // 一次性迁移：1.5.6 及之前直播默认开启，但点开后无内容可看；
+      // 用户从未主动勾选过（无 liveOptIn 标记）则改为默认关。
+      // 之后用户主动勾选会写入 liveOptIn=true，不会再被改动。
+      if (config.types.live && !config.liveOptIn) {
+        config.types.live = false;
+        chrome.storage.local.set({ [KEY_CONFIG]: config });
+      }
       render();
       var ups = res[KEY_UPDATES] || {};
       renderUnread(
@@ -157,6 +167,8 @@
     cb.addEventListener('change', function () {
       var patch = { types: {} };
       patch.types[cb.dataset.type] = cb.checked;
+      // 用户主动开启直播提醒：记下 opt-in 标记，迁移逻辑不再动它
+      if (cb.dataset.type === 'live' && cb.checked) patch.liveOptIn = true;
       saveConfig(patch);
     });
   });
