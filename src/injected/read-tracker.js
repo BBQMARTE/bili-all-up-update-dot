@@ -37,6 +37,10 @@
         name: (info && info.name) || '',
         face: (info && info.face) || '',
         lastPubTs: 0,
+        lastSeq: 0,
+        // 建档时也要写「已读进度」，否则刷新后扫描器会把他当新人重新点亮
+        readAtTs: Math.floor(Date.now() / 1000),
+        readAtSeq: 0,
         type: '',
         kind: 'other',
         unread: false,
@@ -52,14 +56,19 @@
     if (info && info.name && !rec.name) rec.name = info.name;
     if (info && info.face && !rec.face) rec.face = info.face;
 
-    if (!rec.unread) return false;
+    // 关键：点击行为本身就代表「我看过了」，所以无论当前是否已是已读状态，
+    // 都要刷新已读进度。否则点了当时没有蓝点的 UP（例如刚建基线还没点亮、
+    // 或官方列表里的），这次点击不留痕，之后扫描器照样把他点亮。
+    rec.readAtSeq = rec.lastSeq || 0;
+    rec.readAtTs = rec.lastPubTs || Math.floor(Date.now() / 1000);
+
+    if (!rec.unread) {
+      NS.persist(); // 进度已变化，必须落盘
+      return false;
+    }
 
     rec.unread = false;
     rec.seenAt = Date.now();
-    // 记住「读到哪个时间点为止」，供扫描器做已读保护：
-    // 不比这个时间新的动态不再重新点亮（防 seenIds 滚动淘汰导致误判）。
-    // 从未记录过动态时间时（多为官方常看列表里的人）退化为当前时间。
-    rec.readAtTs = rec.lastPubTs || Math.floor(Date.now() / 1000);
     hiddenMids.add(mid);
     NS.persist();
     hideDotForMid(mid, rec.face, rec.name);
@@ -90,6 +99,7 @@
       if (r && r.unread) {
         r.unread = false;
         r.seenAt = Date.now();
+        r.readAtSeq = r.lastSeq || 0;
         r.readAtTs = r.lastPubTs || nowSec;
         hiddenMids.add(String(mid));
         n++;

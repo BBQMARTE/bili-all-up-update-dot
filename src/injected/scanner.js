@@ -58,24 +58,36 @@
 
     var ts = toSec(author.pub_ts);
     if (!ts) ts = tsFromText(author.pub_time);
-    // 最后兜底：取当前时间。宁可误判为新动态（打一个蓝点），
-    // 也不要因为字段名变更而永远检测不到更新。
-    if (!ts) ts = Math.floor(Date.now() / 1000);
+    // 注意：这里不再用 Date.now() 兜底。
+    // 一旦 ts 退化成「当前时间」，每次扫描都会得到一个更大的值，
+    // 于是同一条动态永远比「已读进度」新 —— 蓝点每刷新必复活。
+    // 真正的排序/比较基准改用下面的 seq（雪花序，永不漂移）。
 
     var type = it.type || '';
     // feed/all 里可能是 http://，注入 up_list 后会被浏览器按混合内容拦截
     var face = author.face || '';
     if (face.indexOf('http://') === 0) face = 'https://' + face.slice(7);
 
-    // 动态 id：雪花序、稳定不变，是「已见过」判定的唯一可靠依据
+    // 动态 id：雪花序、单调递增、稳定不变
     var dynId =
       it.id_str || it.id || (it.basic && it.basic.rid_str) || '';
+
+    // seq：比较「新不新」的唯一可靠基准。
+    // id_str 是雪花算法生成的 64 位整数，随时间单调递增且永不重复、永不受
+    // 相对时间（如「3小时前」）解析漂移影响。取不到时为 0，
+    // 0 在任何比较中都会判定为「不比已读进度新」，因此不会误点亮。
+    var seq = 0;
+    if (dynId && /^\d+$/.test(String(dynId))) {
+      var nv = Number(dynId);
+      if (isFinite(nv) && nv > 0) seq = nv;
+    }
 
     return {
       mid: String(mid),
       name: author.name || '',
       face: face,
       ts: ts,
+      seq: seq,
       type: type,
       kind: NS.kindOf(type),
       id: dynId ? String(dynId) : '',
@@ -262,14 +274,17 @@
       if (it.name) rec.name = it.name;
       if (it.face) rec.face = it.face;
 
-      // 已读保护（UP 维度）：
-      // seenIds 是滚动淘汰的游标（上限 MAX_SEEN_IDS），你关注 100+ 个 UP 时，
-      // 看过的动态 id 迟早会被挤出缓存；一旦这些老动态之后又在 feed 中出现，
-      // 仅靠 id 判重就会把它误当成「新动态」重新点亮 —— 这就是已读蓝点
-      // 「刷新几次又冒出来」的根源。
-      // 因此再加一层 UP 维度判定：读过这个 UP 时记下 readAtTs（当时他最新
-      // 动态的时间），本条动态不比它新就不点亮；他真发了更新的动态才重新亮。
-      var alreadyRead = rec.readAtTs && it.ts <= rec.readAtTs;
+      // 已读保护（UP 维度，独立于会淘汰的 seenIds 游标）：
+      // 两个判据任一命中即判定「这条不比已读进度新」，不点亮：
+      //   1) seq（首选）：雪花序 id，单调递增且永不漂移。用户读过后记下
+      //      readAtSeq，同一条动态再次出现时 seq 不变，必然被判定为已读。
+      //   2) ts（兜底）：老数据没有 readAtSeq 时用时间戳比较。
+      // 只有真正更新的动态（seq 更大 / 时间更晚）才会重新点亮。
+      // 注意：值为 0 表示「未知」，绝不能参与比较 —— 否则时间字段缺失的动态
+      // 会被 ts=0 <= readAtTs 恒真地误判成已读，导致真新动态也点不亮。
+      var alreadyRead =
+        (rec.readAtSeq && it.seq > 0 && it.seq <= rec.readAtSeq) ||
+        (rec.readAtTs && it.ts > 0 && it.ts <= rec.readAtTs);
       if (it.isNew && !alreadyRead && NS.typeEnabled(it.kind)) rec.unread = true;
 
       if (it.ts > (rec.lastPubTs || 0)) {
@@ -277,6 +292,7 @@
         rec.type = it.type;
         rec.kind = it.kind;
       }
+      if (it.seq > (rec.lastSeq || 0)) rec.lastSeq = it.seq;
     }
 
     // --- 3. 直播开播 ---
