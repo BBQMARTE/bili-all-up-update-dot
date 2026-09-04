@@ -327,20 +327,6 @@
         (rec.readAtTs && it.ts > 0 && it.ts <= rec.readAtTs);
 
       if (it.isNew && !alreadyRead && NS.typeEnabled(it.kind)) {
-        // 复活追踪：把「用户明明点过却又被点亮」的完整判定依据打出来，
-        // 便于一次性定位原因，而不是靠猜。
-        if (rec.seenAt) {
-          console.warn(
-            '[全UP蓝点] 复活警告：准备重新点亮用户已读过的 UP\n' +
-              '  UP：' + rec.name + '（mid=' + it.mid + '）\n' +
-              '  本次动态：seq=' + it.seq + ' ts=' + it.ts + '（' + (it.ts ? new Date(it.ts * 1000).toISOString() : '未知') + '）\n' +
-              '  已读进度：readAtSeq=' + (rec.readAtSeq || 0) + ' readAtTs=' + (rec.readAtTs || 0) + '\n' +
-              '  该UP记录：lastSeq=' + (rec.lastSeq || 0) + ' lastPubTs=' + (rec.lastPubTs || 0) + '\n' +
-              '  判定：seq判据=' + !!(rec.readAtSeq && it.seq > 0 && it.seq <= rec.readAtSeq) +
-              ' 时间判据=' + !!(rec.readAtTs && it.ts > 0 && it.ts <= rec.readAtTs) +
-              ' isNew=' + it.isNew
-          );
-        }
         rec.unread = true;
       }
 
